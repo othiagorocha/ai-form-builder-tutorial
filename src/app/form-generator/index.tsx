@@ -26,7 +26,6 @@ const initialState: {
 
 export function SubmitButton() {
   const { pending } = useFormStatus();
-
   return (
     <Button type="submit" disabled={pending}>
       {pending ? "Generating..." : "Generate"}
@@ -44,8 +43,9 @@ const FormGenerator = (props: Props) => {
     if (state.message === "success") {
       setOpen(false);
     }
+    console.log(state.message);
     console.log(state.data);
-  }, [state]);
+  }, [state.message, state.data]);
 
   const onFormCreate = () => {
     if (session.data?.user) {

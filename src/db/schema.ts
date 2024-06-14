@@ -6,10 +6,21 @@ import {
   primaryKey,
   integer,
   serial,
+  pgEnum,
 } from "drizzle-orm/pg-core";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import type { AdapterAccountType } from "next-auth/adapters";
+import { relations } from "drizzle-orm";
+
+export const formElements = pgEnum("field_type", [
+  "RadioGroup",
+  "CheckboxGroup",
+  "Select",
+  "Input",
+  "Textarea",
+  "Switch",
+]);
 
 const pool = postgres(
   process.env.DATABASE_URL || "postgres://postgres:postgres@127.0.0.1:5432/db"
@@ -98,5 +109,42 @@ export const forms = pgTable("forms", {
   id: serial("id").primaryKey(),
   name: text("name"),
   description: text("description"),
-  userId: text("userId"),
+  userId: text("user_id"),
+  published: boolean("published"),
 });
+
+export const formsRelations = relations(forms, ({ many, one }) => ({
+  questions: many(questions),
+  user: one(users, {
+    fields: [forms.id],
+    references: [users.id],
+  }),
+}));
+
+export const questions = pgTable("questions", {
+  id: serial("id").primaryKey(),
+  text: text("text"),
+  fieldType: formElements("field_type"),
+  formId: integer("form_id"),
+});
+
+export const questionsRelations = relations(questions, ({ one, many }) => ({
+  form: one(forms, {
+    fields: [questions.formId],
+    references: [forms.id],
+  }),
+  fieldOptions: many(fieldOptions),
+}));
+
+export const fieldOptions = pgTable("field_options", {
+  id: serial("id").primaryKey(),
+  text: text("text"),
+  value: text("value"),
+  questionId: integer("question_id"),
+});
+export const fieldOptionsRelations = relations(fieldOptions, ({ one }) => ({
+  question: one(questions, {
+    fields: [fieldOptions.questionId],
+    references: [questions.id],
+  }),
+}));
