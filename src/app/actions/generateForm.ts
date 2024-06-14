@@ -1,13 +1,17 @@
 "use server";
 
+import { auth } from "@/auth";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
-import OpenAI from "openai";
 
 export async function generateForm(
   prevState: { message: string },
   formData: FormData
 ) {
+  const session = await auth();
+  if (!session?.user) redirect("/api/auth/signin");
+
   const schema = z.object({
     description: z.string().min(1),
   });
