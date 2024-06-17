@@ -5,7 +5,55 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { saveForm } from "./mutateForm";
-import console from "console";
+
+function cleanApiResponse(jsonResponse: string) {
+  let cleanedResponse = jsonResponse
+    .replace(/\/\/.*\n/g, "") // Remove single-line comments
+    .replace(/\/\*[\s\S]*?\*\//g, "") // Remove block comments
+    .replace(/<[^>]*>/g, "") // Remove HTML tags
+    .replace(/@[^ ]+:/g, "") // Remove npm package references
+    .replace(/\\\"/g, '"') // Replace incorrectly escaped characters
+    .replace(/\t/g, "") // Remove tabs
+    .replace(/,\s*}/g, "}") // Fix trailing commas before closing braces
+    .replace(/,\s*]/g, "]") // Fix trailing commas before closing brackets
+    .replace(/\n/g, "") // Remove newlines
+    .replace(/\s+/g, " ") // Replace multiple whitespace with single space
+    .replace(/{\s*"\s*/g, '{"') // Fix spaces in keys
+    .replace(/"\s*}/g, '"}') // Fix spaces before closing braces in keys
+    .replace(/"\s*:/g, '":') // Fix spaces before colons in keys
+    .replace(/:\s*"/g, ':"') // Fix spaces after colons in values
+    .replace(/,\s*"/g, ',"') // Fix spaces after commas in values
+    .trim(); // Remove whitespace from both ends of a string
+  console.log(cleanedResponse);
+  try {
+    const parsedJson = JSON.parse(cleanedResponse);
+    console.log("JSON válido:", parsedJson);
+    return parsedJson;
+  } catch (error) {
+    console.log("Falha ao analisar o JSON:", error);
+    return null;
+  }
+}
+
+const fieldOptionSchema = z.object({
+  text: z.string(),
+  value: z.string(),
+});
+const questionSchema = z.object({
+  text: z.string(),
+  fieldType: z.enum(["RadioGroup", "Select", "Input", "Textarea", "Switch"]),
+  fieldOptions: z.array(fieldOptionSchema).optional(),
+});
+const questionsArraySchema = z.array(questionSchema);
+const apiResponseSchema = z.object({
+  choices: z.array(
+    z.object({
+      message: z.object({
+        content: questionsArraySchema,
+      }),
+    })
+  ),
+});
 
 export async function generateForm(
   prevState: { message: string },
@@ -36,7 +84,7 @@ export async function generateForm(
 
   const data = parse.data;
   const promptExplanation =
-    "Based on the description, generate a survey with questions array where every element has 2 fields: text and the fieldType and fieldType can be of these options RadioGroup, Select, Input, Textarea, Switch; and return it in json format. For RadioGroup, and Select types also return fieldOptions array with text and value fields. For example, for RadioGroup, and Select types, the field options array can be [{text: 'Yes', value: 'yes'}, {text: 'No', value: 'no'}) and for Input, Textarea, and Switch types, the field options array can be empty. For example, for Input, Textarea, and Switch types, the field options array can be []. Retorne a enquete em formato JSON, evite usar markdown para json, em BR e não coloque de maneira nenhuma comentários (//).";
+    "Com base na descrição fornecida, gere uma pesquisa com um array de perguntas onde cada elemento possui 2 campos: text e fieldType. O campo fieldType pode ser uma das seguintes opções: RadioGroup, Select, Input, Textarea ou Switch. Para os tipos RadioGroup e Select, também retorne um array fieldOptions com os campos text e value. Por exemplo, para os tipos RadioGroup e Select, o array de opções de campo pode ser [{text: 'Sim', value: 'sim'}, {text: 'Não', value: 'não'}], e para os tipos Input, Textarea e Switch, o array de opções de campo pode estar vazio. Por exemplo, para os tipos Input, Textarea e Switch, o array de opções de campo pode ser []. Retorne a pesquisa em formato JSON sem usar markdown para json, em português do Brasil e sem incluir comentários (//).";
 
   try {
     const response = await fetch(
@@ -51,7 +99,7 @@ export async function generateForm(
           model: "gpt-3.5-turbo",
           messages: [
             {
-              role: "system",
+              role: "user",
               content: `${data.description} ${promptExplanation}`,
             },
           ],
@@ -61,9 +109,24 @@ export async function generateForm(
 
     const json = await response.json();
     console.log(json);
-    const content = json.choices[0].message.content;
-    const jsonString = content.split("```json\n")[1].split("\n```")[0];
-    const questionsData = JSON.parse(jsonString);
+    // Chame a função de limpeza aqui
+    const cleanedResponse = cleanApiResponse(JSON.stringify(json));
+    console.log(cleanedResponse);
+
+    // Certifique-se de que 'cleanedResponse' não é nulo antes de continuar
+    if (!cleanedResponse) {
+      throw new Error("Failed to clean API response");
+    }
+
+    // Valide a resposta da API aqui
+    const parseResult = apiResponseSchema.safeParse(cleanedResponse);
+    if (!parseResult.success) {
+      console.log(parseResult.error);
+      throw new Error("Failed to parse API response");
+    }
+
+    // Se a validação for bem-sucedida, continue com o fluxo
+    const questionsData = parseResult.data.choices[0].message.content;
 
     const dbFormId = await saveForm({
       name: "Testing save form",
